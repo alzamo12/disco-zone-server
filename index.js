@@ -26,6 +26,34 @@ async function run() {
     try {
         // Connect the client to the server	(optional starting in v4.7)
         await client.connect();
+
+        const db = client.db("discoZone");
+        const postsCollection = db.collection("posts");
+
+        app.get('/posts/count/:email', async (req, res) => {
+            try {
+                const email = req.params.email;
+                const count = await postsCollection.countDocuments({ authorEmail: email });
+                res.json({ count });
+            } catch (err) {
+                res.status(500).json({ error: 'Failed to fetch count' });
+            }
+        });
+
+        // 2️⃣ Add a new post
+        app.post('/posts', async (req, res) => {
+            try {
+                const post = req.body;
+                post.upVote = post.upVote || 0;
+                post.downVote = post.downVote || 0;
+                post.createdAt = new Date();
+                const result = await postsCollection.insertOne(post);
+                res.json({ insertedId: result.insertedId });
+            } catch (err) {
+                res.status(500).json({ error: 'Failed to add post' });
+            }
+        });
+
         // Send a ping to confirm a successful connection
         await client.db("admin").command({ ping: 1 });
         console.log("Pinged your deployment. You successfully connected to MongoDB!");
