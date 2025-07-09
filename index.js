@@ -100,7 +100,7 @@ async function run() {
             }
         });
 
-   app.post('/user', async (req, res) => {
+        app.post('/user', async (req, res) => {
             try {
                 const user = req.body;
 
@@ -134,12 +134,34 @@ async function run() {
             }
         });
 
+        // user get api
+        app.get('/user/:email', async (req, res) => {
+            try {
+                const email = req.params.email;
+                const user = await usersCollection.findOne({ email });
+                if (!user) return res.status(404).json({ error: 'User not found' });
 
-  
+                // Determine badge: gold if user.isMember=true, else bronze
+                const badge = user.isMember ? 'gold' : 'bronze';
+
+                res.json({
+                    name: user.name,
+                    email: user.email,
+                    image: user.photoURL,
+                    badge,
+                    registeredAt: user.createdAt,
+                });
+            } catch (err) {
+                console.error(err);
+                res.status(500).json({ error: 'Failed to fetch profile' });
+            }
+        });
+
+
         // user post api
         // Add this to your Express backend
 
-     
+
 
 
 
