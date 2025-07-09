@@ -2,13 +2,13 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 dotenv.config();
 const PORT = process.env.PORT || 5000;
 const app = express();
 
 app.use(express.json());
-app.use(cors());
+app.use(cors(["https://disco-zone.web.app/", "http://localhost:5173/", "http://localhost:5174/"]));
 
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.g8eto.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
@@ -25,7 +25,7 @@ const client = new MongoClient(uri, {
 async function run() {
     try {
         // Connect the client to the server	(optional starting in v4.7)
-        await client.connect();
+        // await client.connect();
 
         const db = client.db("discoZone");
         const postsCollection = db.collection("posts");
@@ -55,12 +55,7 @@ async function run() {
             }
         });
 
-        // GET /api/posts
-        // Optional query params:
-        //   email  → filter by authorEmail
-        //   limit  → max number of posts to return
-        //   sort   → sort order (e.g. '-createdAt' for newest first)
-
+        // get all posts or sorted posts via email or ass/dsc order
         app.get('/posts', async (req, res) => {
             try {
                 const { email, limit, sort } = req.query;
@@ -99,6 +94,27 @@ async function run() {
                 res.status(500).json({ error: 'Failed to fetch posts' });
             }
         });
+
+        // delete a post
+        app.delete('/post/:id', async (req, res) => {
+            try {
+                const id = req.params.id;
+
+                //  delete the document
+                const query = { _id: new ObjectId(id) };
+                const result = await postsCollection.deleteOne(query);
+                if (result.deletedCount === 0) {
+                    return res.status(404).json({ error: 'Post not found' });
+                }
+                res.json({ message: 'Post deleted' });
+            } catch (err) {
+                console.error(err);
+                res.status(500).json({ error: 'Failed to delete post' });
+            }
+        });
+
+
+        // user related api's
 
         app.post('/user', async (req, res) => {
             try {
@@ -166,8 +182,8 @@ async function run() {
 
 
         // Send a ping to confirm a successful connection
-        await client.db("admin").command({ ping: 1 });
-        console.log("Pinged your deployment. You successfully connected to MongoDB!");
+        // await client.db("admin").command({ ping: 1 });
+        // console.log("Pinged your deployment. You successfully connected to MongoDB!");
     } finally {
         // Ensures that the client will close when you finish/error
         // await client.close();
