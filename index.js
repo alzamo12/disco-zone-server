@@ -55,39 +55,54 @@ async function run() {
             }
         });
 
-        // get all posts or sorted posts via email or ass/dsc order
+
         app.get('/posts', async (req, res) => {
             try {
-                const { email, limit, sort } = req.query;
+                const { email, sort = 'new', page = 1, limit = 5 } = req.query;
+                const skip = (Number(page) - 1) * Number(limit);
 
-                // Build filter object
-                const filter = {};
-                if (email) filter.authorEmail = email;
+                const pipeline = [];
 
-                // Build sort specifier
-                let sortSpec = {};
-                if (sort) {
-                    const direction = sort.startsWith('-') ? -1 : 1;
-                    const field = sort.replace(/^-/, '');
-                    sortSpec[field] = direction;
+                // Optional email filter
+                if (email) {
+                    pipeline.push({ $match: { authorEmail: email } });
                 }
 
-                // Start the cursor
-                let cursor = postsCollection.find(filter);
+                // Join comments to count
+                pipeline.push({
+                    $lookup: {
+                        from: 'comments',
+                        localField: 'title',          // assuming unique titles
+                        foreignField: 'postTitle',
+                        as: 'commentsArr'
+                    }
+                });
 
-                // Apply sorting if requested
-                if (Object.keys(sortSpec).length) {
-                    cursor = cursor.sort(sortSpec);
+                // Add commentCount and voteDifference
+                pipeline.push({
+                    $addFields: {
+                        commentCount: { $size: '$commentsArr' },
+                        voteDifference: { $subtract: ['$upVote', '$downVote'] }
+                    }
+                });
+
+                // Sorting stage
+                if (sort === 'popular') {
+                    pipeline.push({ $sort: { voteDifference: -1 } });
+                } else {
+                    pipeline.push({ $sort: { createdAt: -1 } });
                 }
 
-                // Apply limit if provided and > 0
-                const n = parseInt(limit, 10);
-                if (!isNaN(n) && n > 0) {
-                    cursor = cursor.limit(n);
-                }
+                // Pagination stages
+                pipeline.push({ $skip: skip });
+                pipeline.push({ $limit: Number(limit) });
 
-                // Execute
-                const posts = await cursor.toArray();
+                // Final project (omit commentsArr)
+                pipeline.push({
+                    $project: { commentsArr: 0 }
+                });
+
+                const posts = await postsCollection.aggregate(pipeline).toArray();
                 res.json(posts);
             } catch (err) {
                 console.error(err);
@@ -129,7 +144,10 @@ async function run() {
                 // Check if user already exists
                 const existing = await usersCollection.findOne({ email });
                 if (existing) {
-                    return res.status(200).json({ message: 'User already exists' });
+                    const data = {
+                        badge: existing?.badge,
+                    }
+                    return res.status(200).json({ message: 'User already exists', data: data });
                 }
 
                 // Create the user object
@@ -137,13 +155,14 @@ async function run() {
                     name,
                     email,
                     photoURL: photoURL || '',
-                    isMember: false,              // default: not a member
+                    badge: "bronze",
+                    role: "user",             // 
                     createdAt: new Date(),        // registration time
                 };
 
-                await usersCollection.insertOne(newUser);
+                const result = await usersCollection.insertOne(newUser);
 
-                res.status(201).json({ message: 'User created', user: newUser });
+                res.status(201).send(result);
             } catch (err) {
                 console.error(err);
                 res.status(500).json({ error: 'Failed to create user' });
@@ -170,6 +189,23 @@ async function run() {
             } catch (err) {
                 console.error(err);
                 res.status(500).json({ error: 'Failed to fetch profile' });
+            }
+        });
+
+        // role base api
+        app.get('/user/role-badge/:email', async (req, res) => {
+            try {
+                const email = req.params.email;
+                const user = await usersCollection.findOne({ email });
+                if (!user) return res.status(404).json({ error: 'User not found' });
+
+                const role = user.role || 'user'; // 'admin' or 'user'
+                const badge = user.badge || 'bronze'; // 'bronze' or 'gold'
+
+                res.json({ role, badge });
+            } catch (err) {
+                console.error(err);
+                res.status(500).json({ error: 'Internal server error' });
             }
         });
 
