@@ -4,6 +4,7 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 dotenv.config();
+const stripe = require("stripe")(process.env.PAYMENT_GATEWAY_KEY);
 const PORT = process.env.PORT || 5000;
 const app = express();
 
@@ -192,6 +193,37 @@ async function run() {
             }
         });
 
+        // user put api
+        app.put('/user/:email', async (req, res) => {
+            try {
+                const email = req.params.email;
+                const updates = req.body;
+
+                if (!updates || Object.keys(updates).length === 0) {
+                    return res.status(400).json({ error: 'No fields provided for update' });
+                }
+
+                const result = await usersCollection.updateOne(
+                    { email },
+                    { $set: updates }
+                );
+
+                if (result.matchedCount === 0) {
+                    return res.status(404).json({ error: 'User not found' });
+                }
+
+                res.json({
+                    message: 'User updated',
+                    modifiedCount: result.modifiedCount,
+                    updatedFields: updates
+                });
+            } catch (err) {
+                console.error('Error updating user:', err);
+                res.status(500).json({ error: 'Internal server error' });
+            }
+        });
+
+
         // role base api
         app.get('/user/role-badge/:email', async (req, res) => {
             try {
@@ -208,6 +240,22 @@ async function run() {
                 res.status(500).json({ error: 'Internal server error' });
             }
         });
+
+        // payment api
+        app.post('/create-payment-intent', async (req, res) => {
+            const amount = 1000;
+            try {
+                const paymentIntent = await stripe.paymentIntents.create({
+                    amount,
+                    currency: "usd",
+                    payment_method_types: ["card"]
+                });
+                res.json({ clientSecret: paymentIntent.client_secret })
+            }
+            catch (error) {
+                res.status(500).json({ error: error.message });
+            }
+        })
 
 
         // user post api
