@@ -31,6 +31,7 @@ async function run() {
         const db = client.db("discoZone");
         const postsCollection = db.collection("posts");
         const usersCollection = db.collection("users");
+        const commentsCollection = db.collection("comments");
 
         app.get('/posts/count/:email', async (req, res) => {
             try {
@@ -256,6 +257,71 @@ async function run() {
                 res.status(500).json({ error: error.message });
             }
         })
+
+
+        app.get('/post/:id', async (req, res) => {
+            try {
+                const id = req.params.id;
+                const query = { _id: new ObjectId(id) }
+                const post = await postsCollection.findOne(query);
+                if (!post) return res.status(404).json({ error: 'Post not found' });
+                res.json(post);
+            } catch (err) {
+                console.error(err);
+                res.status(500).json({ error: 'Failed to fetch post' });
+            }
+        });
+
+        // 2. Update votes (upvote/downvote) by ID
+        app.put('/post/vote/:id', async (req, res) => {
+            try {
+                const id = req.params.id;
+                const { type: voteType } = req.body; // voteType: 'up' or 'down'
+                // console.log(voteType)
+                const update =
+                    voteType === 'up' ? { $inc: { upVote: 1 } } : { $inc: { downVote: 1 } };
+                const query = { _id: new ObjectId(id) }
+
+                const result = await postsCollection.updateOne(
+                    query,
+                    update
+                );
+                if (result.modifiedCount === 0)
+                    return res.status(404).json({ error: 'Post not found or vote not applied' });
+                res.json({ message: 'Vote updated' });
+            } catch (err) {
+                console.error(err);
+                res.status(500).json({ error: 'Failed to update vote' });
+            }
+        });
+
+        // 3. Create comment for a post
+        app.post('/comments', async (req, res) => {
+            try {
+                const comment = req.body; // should contain postId, postTitle, commenterEmail, content, createdAt
+                const result = await commentsCollection.insertOne(comment);
+                res.status(201).json({ message: 'Comment added', commentId: result.insertedId });
+            } catch (err) {
+                console.error(err);
+                res.status(500).json({ error: 'Failed to add comment' });
+            }
+        });
+
+        // 4. Get comments by postId
+        app.get('/comments/:postId', async (req, res) => {
+            try {
+                const postId = req.params.postId;
+                const comments = await commentsCollection
+                    .find({ postId })
+                    .sort({ createdAt: -1 })
+                    .toArray();
+                res.json(comments);
+            } catch (err) {
+                console.error(err);
+                res.status(500).json({ error: 'Failed to fetch comments' });
+            }
+        });
+
 
 
         // user post api
