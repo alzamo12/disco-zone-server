@@ -224,6 +224,14 @@ async function run() {
             }
         });
 
+        // all user get api
+        app.get("/users", async (req, res) => {
+            const { search = '' } = req.query;
+            const regex = new RegExp(search, 'i');
+            const result = await usersCollection.find({ name: { $regex: regex } }).toArray();
+            res.send(result)
+        })
+
 
         // role base api
         app.get('/user/role-badge/:email', async (req, res) => {
