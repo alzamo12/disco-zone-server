@@ -5,6 +5,8 @@ const dotenv = require('dotenv');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 dotenv.config();
 const stripe = require("stripe")(process.env.PAYMENT_GATEWAY_KEY);
+const admin = require("firebase-admin");
+const serviceAccount = require("./firebase-service-key.json");
 const PORT = process.env.PORT || 5000;
 const app = express();
 
@@ -23,6 +25,11 @@ const client = new MongoClient(uri, {
     }
 });
 
+// firebase admin
+admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+});
+
 async function run() {
     try {
         // Connect the client to the server	(optional starting in v4.7)
@@ -33,6 +40,26 @@ async function run() {
         const usersCollection = db.collection("users");
         const commentsCollection = db.collection("comments");
         const announcementsCollection = db.collection("announcements");
+
+        const verifyToken = async (req, res, next) => {
+            const authHeader = req.headers?.authorization;
+            if (!authHeader || !authHeader.startsWith("Bearer ")) {
+                return res.status(401).send({ message: "unauthorized access" })
+            }
+            // console.log(authHeader)
+
+            const token = authHeader.split(' ')[1];
+
+            try {
+                const decoded = await admin.auth().verifyIdToken(token);
+                req.user = decoded
+                // console.log('decode Token', decoded);
+                next()
+            }
+            catch (error) {
+                return res.status(401).send({ message: "unauthorized access" })
+            }
+        };
 
         app.get('/posts/count/:email', async (req, res) => {
             try {
@@ -45,7 +72,7 @@ async function run() {
         });
 
         // 2️⃣ Add a new post
-        app.post('/posts', async (req, res) => {
+        app.post('/posts', verifyToken, async (req, res) => {
             try {
                 const post = req.body;
                 post.upVote = post.upVote || 0;
@@ -264,6 +291,7 @@ async function run() {
         app.get('/user/role-badge/:email', async (req, res) => {
             try {
                 const email = req.params.email;
+                console.log(email)
                 const user = await usersCollection.findOne({ email });
                 if (!user) return res.status(404).json({ error: 'User not found' });
 
