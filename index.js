@@ -32,6 +32,7 @@ async function run() {
         const postsCollection = db.collection("posts");
         const usersCollection = db.collection("users");
         const commentsCollection = db.collection("comments");
+        const announcementsCollection = db.collection("announcements");
 
         app.get('/posts/count/:email', async (req, res) => {
             try {
@@ -355,6 +356,26 @@ async function run() {
                 res.status(500).json({ error: 'Failed to fetch comments' });
             }
         });
+
+
+        // admin announcement related api's
+        app.post('/announcement', async (req, res) => {
+            try {
+                const data = req.body;
+
+                const newAnnouncement = {
+                    ...data,
+                    createdAt: new Date(),  
+                };
+
+                const result = await announcementsCollection.insertOne(newAnnouncement);
+                res.send(result)
+            } catch (err) {
+                console.error(err);
+                res.status(500).json({ error: 'Failed to create announcement' });
+            }
+        });
+
 
 
 
