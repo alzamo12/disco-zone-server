@@ -330,7 +330,10 @@ async function run() {
             }
         });
 
-        // 3. Create comment for a post
+
+        // 3 --->> All comments related API
+
+        //  Create comment for a post
         app.post('/comments', async (req, res) => {
             try {
                 const comment = req.body; // should contain postId, postTitle, commenterEmail, content, createdAt
@@ -342,7 +345,7 @@ async function run() {
             }
         });
 
-        // 4. Get comments by postId
+        //  Get comments by postId
         app.get('/comments/:postId', async (req, res) => {
             try {
                 const postId = req.params.postId;
@@ -360,7 +363,7 @@ async function run() {
         // comment report put api
         app.put("/comment/report/:id", async (req, res) => {
             const { id } = req.params;
-            const {feedback} = req.body;
+            const { feedback } = req.body;
             console.log(feedback)
             const query = { _id: new ObjectId(id) };
             const updatedDoc = {
@@ -373,7 +376,56 @@ async function run() {
 
             const result = await commentsCollection.updateOne(query, updatedDoc);
             res.send(result)
+        });
+
+        // Clear the `reported` flag (admin only)
+        app.put("/comment/dismiss-report/:id", async (req, res) => {
+            const { id } = req.params;
+
+            const query = { _id: new ObjectId(id) };
+            const update = {
+                $set: {
+                    reported: false,
+                },
+                $unset: {
+                    feedback: "",
+                    reportedAt: ""
+                }
+            };
+
+            try {
+                const result = await commentsCollection.updateOne(query, update);
+                res.send(result)
+            } catch (err) {
+                console.error(err);
+                res.status(500).json({ error: "Failed to dismiss report" });
+            }
+        });
+
+        // Get all reported comments
+        app.get('/reported-comments', async (req, res) => {
+            try {
+                const query = { reported: true };
+                const sort = { reportedAt: -1 }
+                const reported = await commentsCollection
+                    .find(query)
+                    .sort(sort)
+                    .toArray();
+                res.send(reported);
+            } catch (err) {
+                console.error('Error fetching reported comments:', err);
+                res.status(500).json({ error: 'Failed to load reported comments' });
+            }
+        });
+
+        // delete a single comment
+        app.delete("/comment/:id", async (req, res) => {
+            const { id } = req.params;
+            const query = { _id: new ObjectId(id) };
+            const result = await commentsCollection.deleteOne(query);
+            res.send(result);
         })
+
 
 
         // admin announcement related api's
