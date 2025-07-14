@@ -357,6 +357,24 @@ async function run() {
             }
         });
 
+        // comment report put api
+        app.put("/comment/report/:id", async (req, res) => {
+            const { id } = req.params;
+            const {feedback} = req.body;
+            console.log(feedback)
+            const query = { _id: new ObjectId(id) };
+            const updatedDoc = {
+                $set: {
+                    reported: true,
+                    feedback,
+                    reportedAt: new Date()
+                }
+            };
+
+            const result = await commentsCollection.updateOne(query, updatedDoc);
+            res.send(result)
+        })
+
 
         // admin announcement related api's
         app.post('/announcement', async (req, res) => {
@@ -365,7 +383,7 @@ async function run() {
 
                 const newAnnouncement = {
                     ...data,
-                    createdAt: new Date(),  
+                    createdAt: new Date(),
                 };
 
                 const result = await announcementsCollection.insertOne(newAnnouncement);
