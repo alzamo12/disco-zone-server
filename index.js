@@ -60,8 +60,15 @@ async function run() {
 
         app.get('/posts', async (req, res) => {
             try {
-                const { email, sort = 'new', page = 1, limit = 5 } = req.query;
-                const skip = (Number(page) - 1) * Number(limit);
+                const { email, sort = 'new', page = 1, limit } = req.query;
+
+                const hasLimit = limit !== undefined;
+                const parsedLimit = hasLimit ? Number(limit) : null;
+                const parsedPage = Number(page);
+
+                const skip = hasLimit ?
+                    (parsedPage - 1) * parsedLimit
+                    : null;
 
                 const pipeline = [];
 
@@ -95,9 +102,11 @@ async function run() {
                     pipeline.push({ $sort: { createdAt: -1 } });
                 }
 
-                // Pagination stages
-                pipeline.push({ $skip: skip });
-                pipeline.push({ $limit: Number(limit) });
+
+                if (hasLimit) {
+                    pipeline.push({ $skip: skip });
+                    pipeline.push({ $limit: parsedLimit })
+                }
 
                 // Final project (omit commentsArr)
                 pipeline.push({
@@ -232,6 +241,23 @@ async function run() {
             res.send(result)
         })
 
+        // update user role patch api
+        app.patch('/user/admin/:id', async (req, res) => {
+            const { id } = req.params;
+            const { role } = req.body;        // e.g. { role: "admin" }
+            if (!['user', 'admin', 'moderator'].includes(role)) {
+                return res.status(400).json({ error: 'Invalid role' });
+            };
+
+            const query = { _id: new ObjectId(id) };
+            const updatedDoc = { $set: { role } };
+
+            const result = await usersCollection.updateOne(
+                query,
+                updatedDoc
+            );
+            res.send(result)
+        });
 
         // role base api
         app.get('/user/role-badge/:email', async (req, res) => {
