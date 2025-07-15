@@ -89,7 +89,7 @@ async function run() {
 
         app.get('/posts', async (req, res) => {
             try {
-                const { email, sort = 'new', page = 1, limit } = req.query;
+                const { email, sort = 'new', page = 1, limit, search } = req.query;
 
                 const hasLimit = limit !== undefined;
                 const parsedLimit = hasLimit ? Number(limit) : null;
@@ -104,6 +104,10 @@ async function run() {
                 // Optional email filter
                 if (email) {
                     pipeline.push({ $match: { authorEmail: email } });
+                }
+                if (search) {
+                    const matchStage = { tag: { $regex: search, $options: 'i' } }
+                    pipeline.push({ $match: matchStage })
                 }
 
                 // Join comments to count
@@ -468,12 +472,12 @@ async function run() {
             }
         });
 
-        app.get("/announcements", async(req, res) => {
+        app.get("/announcements", async (req, res) => {
             const result = await announcementsCollection.find().toArray();
             res.send(result);
         })
 
-        app.get("/announcement-count", async(req, res) => {
+        app.get("/announcement-count", async (req, res) => {
             const result = await announcementsCollection.countDocuments();
             res.send(result)
         })
@@ -501,7 +505,7 @@ async function run() {
         app.post("/tag", async (req, res, next) => {
             try {
                 const { tag } = req.body;
-                const insertedDoc = {tag};
+                const insertedDoc = { tag };
                 const result = await tagsCollection.insertOne(insertedDoc);
                 res.send(result)
             }
@@ -511,7 +515,7 @@ async function run() {
         });
 
         // tags get api
-        app.get("/tags", async(req, res) => {
+        app.get("/tags", async (req, res) => {
             const result = await tagsCollection.find().toArray();
             res.send(result)
         })
