@@ -296,9 +296,13 @@ async function run() {
 
         // all user get api
         app.get("/users", async (req, res) => {
-            const { search = '' } = req.query;
-            const regex = new RegExp(search, 'i');
-            const result = await usersCollection.find({ name: { $regex: regex } }).toArray();
+            const { search = '', limit = 10, page = 1 } = req.query;
+            const pageNum = Math.max(parseInt(page, 10), 1);
+            const limitNum = Math.max(parseInt(limit, 10), 1);
+            const skipNum = (pageNum - 1) * limitNum; const regex = new RegExp(search, 'i');
+            const users = await usersCollection.find({ name: { $regex: regex } }).skip(skipNum).limit(limitNum).toArray();
+            const usersCount = await usersCollection.countDocuments();
+            const result = { usersCount, users };
             res.send(result)
         })
 
@@ -375,11 +379,13 @@ async function run() {
         app.get('/comments/:postId', async (req, res) => {
             try {
                 const postId = req.params.postId;
+                // const commentsCount = await commentsCollection.countDocuments({postId});
                 const comments = await commentsCollection
                     .find({ postId })
                     .sort({ createdAt: -1 })
                     .toArray();
-                res.json(comments);
+                //    const result = {commentsCount, comments};
+                res.send(comments)
             } catch (err) {
                 console.error(err);
                 res.status(500).json({ error: 'Failed to fetch comments' });
@@ -431,13 +437,21 @@ async function run() {
         // Get all reported comments
         app.get('/reported-comments', async (req, res) => {
             try {
+                const { limit, page } = req.query;
+                const pageNum = Math.max(parseInt(page, 10), 1);
+                const limitNum = Math.max(parseInt(limit, 10), 1);
+                const skinNum = limitNum * (pageNum - 1);
                 const query = { reported: true };
-                const sort = { reportedAt: -1 }
+                const sort = { reportedAt: -1 };
+                const reportedCount = await commentsCollection.countDocuments(query);
                 const reported = await commentsCollection
                     .find(query)
                     .sort(sort)
+                    .skip(skinNum)
+                    .limit(limitNum)
                     .toArray();
-                res.send(reported);
+                const result = { commentsCount: reportedCount, comments: reported };
+                res.send(result)
             } catch (err) {
                 console.error('Error fetching reported comments:', err);
                 res.status(500).json({ error: 'Failed to load reported comments' });
