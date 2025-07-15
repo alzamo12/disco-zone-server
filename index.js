@@ -468,6 +468,16 @@ async function run() {
             }
         });
 
+        app.get("/announcements", async(req, res) => {
+            const result = await announcementsCollection.find().toArray();
+            res.send(result);
+        })
+
+        app.get("/announcement-count", async(req, res) => {
+            const result = await announcementsCollection.countDocuments();
+            res.send(result)
+        })
+
 
         // 4 ----> Admin related API'S  <-----
 
@@ -494,14 +504,17 @@ async function run() {
                 const insertedDoc = {tag};
                 const result = await tagsCollection.insertOne(insertedDoc);
                 res.send(result)
-                console.log(tag)
             }
             catch (err) {
                 next(err)
             }
         });
 
-        // tags 
+        // tags get api
+        app.get("/tags", async(req, res) => {
+            const result = await tagsCollection.find().toArray();
+            res.send(result)
+        })
 
 
 
