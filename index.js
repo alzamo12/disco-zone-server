@@ -40,6 +40,7 @@ async function run() {
         const usersCollection = db.collection("users");
         const commentsCollection = db.collection("comments");
         const announcementsCollection = db.collection("announcements");
+        const tagsCollection = db.collection("tags");
 
         const verifyToken = async (req, res, next) => {
             const authHeader = req.headers?.authorization;
@@ -168,7 +169,44 @@ async function run() {
         });
 
 
-        // user related api's
+        app.get('/post/:id', async (req, res) => {
+            try {
+                const id = req.params.id;
+                const query = { _id: new ObjectId(id) }
+                const post = await postsCollection.findOne(query);
+                if (!post) return res.status(404).json({ error: 'Post not found' });
+                res.json(post);
+            } catch (err) {
+                console.error(err);
+                res.status(500).json({ error: 'Failed to fetch post' });
+            }
+        });
+
+        // 2. Update votes (upvote/downvote) by ID
+        app.put('/post/vote/:id', async (req, res) => {
+            try {
+                const id = req.params.id;
+                const { type: voteType } = req.body; // voteType: 'up' or 'down'
+                // console.log(voteType)
+                const update =
+                    voteType === 'up' ? { $inc: { upVote: 1 } } : { $inc: { downVote: 1 } };
+                const query = { _id: new ObjectId(id) }
+
+                const result = await postsCollection.updateOne(
+                    query,
+                    update
+                );
+                if (result.modifiedCount === 0)
+                    return res.status(404).json({ error: 'Post not found or vote not applied' });
+                res.json({ message: 'Vote updated' });
+            } catch (err) {
+                console.error(err);
+                res.status(500).json({ error: 'Failed to update vote' });
+            }
+        });
+
+
+        // user related API's
 
         app.post('/user', async (req, res) => {
             try {
@@ -209,22 +247,13 @@ async function run() {
         });
 
         // user get api
-        app.get('/user/:email', async (req, res) => {
+        app.get('/user/:email', verifyToken, async (req, res) => {
             try {
                 const email = req.params.email;
                 const user = await usersCollection.findOne({ email });
                 if (!user) return res.status(404).json({ error: 'User not found' });
 
-                // Determine badge: gold if user.isMember=true, else bronze
-                const badge = user.isMember ? 'gold' : 'bronze';
-
-                res.json({
-                    name: user.name,
-                    email: user.email,
-                    image: user.photoURL,
-                    badge,
-                    registeredAt: user.createdAt,
-                });
+                res.send(user)
             } catch (err) {
                 console.error(err);
                 res.status(500).json({ error: 'Failed to fetch profile' });
@@ -322,41 +351,6 @@ async function run() {
         })
 
 
-        app.get('/post/:id', async (req, res) => {
-            try {
-                const id = req.params.id;
-                const query = { _id: new ObjectId(id) }
-                const post = await postsCollection.findOne(query);
-                if (!post) return res.status(404).json({ error: 'Post not found' });
-                res.json(post);
-            } catch (err) {
-                console.error(err);
-                res.status(500).json({ error: 'Failed to fetch post' });
-            }
-        });
-
-        // 2. Update votes (upvote/downvote) by ID
-        app.put('/post/vote/:id', async (req, res) => {
-            try {
-                const id = req.params.id;
-                const { type: voteType } = req.body; // voteType: 'up' or 'down'
-                // console.log(voteType)
-                const update =
-                    voteType === 'up' ? { $inc: { upVote: 1 } } : { $inc: { downVote: 1 } };
-                const query = { _id: new ObjectId(id) }
-
-                const result = await postsCollection.updateOne(
-                    query,
-                    update
-                );
-                if (result.modifiedCount === 0)
-                    return res.status(404).json({ error: 'Post not found or vote not applied' });
-                res.json({ message: 'Vote updated' });
-            } catch (err) {
-                console.error(err);
-                res.status(500).json({ error: 'Failed to update vote' });
-            }
-        });
 
 
         // 3 --->> All comments related API
@@ -457,7 +451,7 @@ async function run() {
 
 
         // admin announcement related api's
-        app.post('/announcement', async (req, res) => {
+        app.post('/announcement', async (req, res, next) => {
             try {
                 const data = req.body;
 
@@ -473,6 +467,41 @@ async function run() {
                 res.status(500).json({ error: 'Failed to create announcement' });
             }
         });
+
+
+        // 4 ----> Admin related API'S  <-----
+
+        // admin stats API
+        app.get("/admin-stats", async (req, res) => {
+            try {
+                const postsCount = await postsCollection.countDocuments();
+                const commentsCount = await commentsCollection.countDocuments();
+                const usersCount = await usersCollection.countDocuments();
+
+                const result = { postsCount, commentsCount, usersCount };
+                res.send(result);
+            }
+            catch (err) {
+                res.send("An error occurred")
+            }
+        });
+
+        // 5 -----> tags related API'S <-------
+
+        app.post("/tag", async (req, res, next) => {
+            try {
+                const { tag } = req.body;
+                const insertedDoc = {tag};
+                const result = await tagsCollection.insertOne(insertedDoc);
+                res.send(result)
+                console.log(tag)
+            }
+            catch (err) {
+                next(err)
+            }
+        });
+
+        // tags 
 
 
 
