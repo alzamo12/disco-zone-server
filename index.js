@@ -47,14 +47,12 @@ async function run() {
             if (!authHeader || !authHeader.startsWith("Bearer ")) {
                 return res.status(401).send({ message: "unauthorized access" })
             }
-            // console.log(authHeader)
 
             const token = authHeader.split(' ')[1];
 
             try {
                 const decoded = await admin.auth().verifyIdToken(token);
                 req.user = decoded
-                // console.log('decode Token', decoded);
                 next()
             }
             catch (error) {
@@ -62,17 +60,20 @@ async function run() {
             }
         };
 
-        app.get('/posts/count/:email', async (req, res) => {
+        app.get('/posts/count/:email', verifyToken, async (req, res) => {
             try {
                 const email = req.params.email;
+                if (req.user.email !== email) {
+                    res.status(403).send({ message: "Forbidden Access" })
+                }
                 const count = await postsCollection.countDocuments({ authorEmail: email });
-                res.json({ count });
+                res.send({ count });
             } catch (err) {
                 res.status(500).json({ error: 'Failed to fetch count' });
             }
         });
 
-        // 2️⃣ Add a new post
+        //  Add a new post
         app.post('/posts', verifyToken, async (req, res) => {
             try {
                 const post = req.body;
@@ -80,13 +81,14 @@ async function run() {
                 post.downVote = post.downVote || 0;
                 post.createdAt = new Date();
                 const result = await postsCollection.insertOne(post);
-                res.json({ insertedId: result.insertedId });
+                // res.json({ insertedId: result.insertedId });
+                res.send(result)
             } catch (err) {
                 res.status(500).json({ error: 'Failed to add post' });
             }
         });
 
-
+        // get all posts
         app.get('/posts', async (req, res) => {
             try {
                 const { email, sort = 'new', page = 1, limit, search } = req.query;
@@ -101,7 +103,6 @@ async function run() {
 
                 const pipeline = [];
 
-                // Optional email filter
                 if (email) {
                     pipeline.push({ $match: { authorEmail: email } });
                 }
@@ -110,17 +111,15 @@ async function run() {
                     pipeline.push({ $match: matchStage })
                 }
 
-                // Join comments to count
                 pipeline.push({
                     $lookup: {
                         from: 'comments',
-                        localField: 'title',          // assuming unique titles
+                        localField: 'title',
                         foreignField: 'postTitle',
                         as: 'commentsArr'
                     }
                 });
 
-                // Add commentCount and voteDifference
                 pipeline.push({
                     $addFields: {
                         commentCount: { $size: '$commentsArr' },
@@ -128,7 +127,6 @@ async function run() {
                     }
                 });
 
-                // Sorting stage
                 if (sort === 'popular') {
                     pipeline.push({ $sort: { voteDifference: -1 } });
                 } else {
@@ -141,11 +139,9 @@ async function run() {
                     pipeline.push({ $limit: parsedLimit })
                 }
 
-                // Final project (omit commentsArr)
                 pipeline.push({
                     $project: { commentsArr: 0 }
                 });
-
                 const posts = await postsCollection.aggregate(pipeline).toArray();
                 res.json(posts);
             } catch (err) {
@@ -155,17 +151,15 @@ async function run() {
         });
 
         // delete a post
-        app.delete('/post/:id', async (req, res) => {
+        app.delete('/post/:id', verifyToken, async (req, res) => {
             try {
                 const id = req.params.id;
-
-                //  delete the document
                 const query = { _id: new ObjectId(id) };
                 const result = await postsCollection.deleteOne(query);
                 if (result.deletedCount === 0) {
                     return res.status(404).json({ error: 'Post not found' });
                 }
-                res.json({ message: 'Post deleted' });
+                res.send(result)
             } catch (err) {
                 console.error(err);
                 res.status(500).json({ error: 'Failed to delete post' });
@@ -179,19 +173,32 @@ async function run() {
                 const query = { _id: new ObjectId(id) }
                 const post = await postsCollection.findOne(query);
                 if (!post) return res.status(404).json({ error: 'Post not found' });
-                res.json(post);
+                res.send(post);
             } catch (err) {
                 console.error(err);
                 res.status(500).json({ error: 'Failed to fetch post' });
             }
         });
 
-        // 2. Update votes (upvote/downvote) by ID
-        app.put('/post/vote/:id', async (req, res) => {
+        app.put("/post/:id", async (req, res) => {
+            const update = req.body;
+            const id = req.params.id;
+            console.log(id)
+            const query = { _id: new ObjectId(id) };
+            const updatedDoc = {
+                $set: {
+                    ...update
+                }
+            };
+            const result = await postsCollection.updateOne(query, updatedDoc);
+            res.send(result)
+        })
+
+        //  Update votes (upvote/downvote) by ID
+        app.put('/post/vote/:id', verifyToken, async (req, res) => {
             try {
                 const id = req.params.id;
-                const { type: voteType } = req.body; // voteType: 'up' or 'down'
-                // console.log(voteType)
+                const { type: voteType } = req.body;
                 const update =
                     voteType === 'up' ? { $inc: { upVote: 1 } } : { $inc: { downVote: 1 } };
                 const query = { _id: new ObjectId(id) }
@@ -202,7 +209,7 @@ async function run() {
                 );
                 if (result.modifiedCount === 0)
                     return res.status(404).json({ error: 'Post not found or vote not applied' });
-                res.json({ message: 'Vote updated' });
+                res.send(result);
             } catch (err) {
                 console.error(err);
                 res.status(500).json({ error: 'Failed to update vote' });
@@ -216,13 +223,11 @@ async function run() {
             try {
                 const user = req.body;
 
-                // Ensure required fields
                 const { name, email, photoURL } = user;
                 if (!name || !email) {
                     return res.status(400).json({ error: 'Name and email are required' });
                 }
 
-                // Check if user already exists
                 const existing = await usersCollection.findOne({ email });
                 if (existing) {
                     const data = {
@@ -231,19 +236,18 @@ async function run() {
                     return res.status(200).json({ message: 'User already exists', data: data });
                 }
 
-                // Create the user object
                 const newUser = {
                     name,
                     email,
                     photoURL: photoURL || '',
                     badge: "bronze",
-                    role: "user",             // 
-                    createdAt: new Date(),        // registration time
+                    role: "user",
+                    createdAt: new Date(),
                 };
 
                 const result = await usersCollection.insertOne(newUser);
 
-                res.status(201).send(result);
+                res.send(result);
             } catch (err) {
                 console.error(err);
                 res.status(500).json({ error: 'Failed to create user' });
@@ -254,7 +258,8 @@ async function run() {
         app.get('/user/:email', verifyToken, async (req, res) => {
             try {
                 const email = req.params.email;
-                const user = await usersCollection.findOne({ email });
+                const query = { email }
+                const user = await usersCollection.findOne(query);
                 if (!user) return res.status(404).json({ error: 'User not found' });
 
                 res.send(user)
@@ -283,11 +288,7 @@ async function run() {
                     return res.status(404).json({ error: 'User not found' });
                 }
 
-                res.json({
-                    message: 'User updated',
-                    modifiedCount: result.modifiedCount,
-                    updatedFields: updates
-                });
+                res.send(result)
             } catch (err) {
                 console.error('Error updating user:', err);
                 res.status(500).json({ error: 'Internal server error' });
@@ -309,7 +310,7 @@ async function run() {
         // update user role patch api
         app.patch('/user/admin/:id', async (req, res) => {
             const { id } = req.params;
-            const { role } = req.body;        // e.g. { role: "admin" }
+            const { role } = req.body;
             if (!['user', 'admin', 'moderator'].includes(role)) {
                 return res.status(400).json({ error: 'Invalid role' });
             };
@@ -328,14 +329,13 @@ async function run() {
         app.get('/user/role-badge/:email', async (req, res) => {
             try {
                 const email = req.params.email;
-                console.log(email)
                 const user = await usersCollection.findOne({ email });
                 if (!user) return res.status(404).json({ error: 'User not found' });
 
-                const role = user.role || 'user'; // 'admin' or 'user'
-                const badge = user.badge || 'bronze'; // 'bronze' or 'gold'
-
-                res.json({ role, badge });
+                const role = user.role || 'user';
+                const badge = user.badge || 'bronze';
+                const result = { role, badge }
+                res.send(result)
             } catch (err) {
                 console.error(err);
                 res.status(500).json({ error: 'Internal server error' });
@@ -343,7 +343,7 @@ async function run() {
         });
 
         // payment api
-        app.post('/create-payment-intent', async (req, res) => {
+        app.post('/create-payment-intent', verifyToken, async (req, res) => {
             const amount = 1000;
             try {
                 const paymentIntent = await stripe.paymentIntents.create({
@@ -351,7 +351,7 @@ async function run() {
                     currency: "usd",
                     payment_method_types: ["card"]
                 });
-                res.json({ clientSecret: paymentIntent.client_secret })
+                res.send({ clientSecret: paymentIntent.client_secret })
             }
             catch (error) {
                 res.status(500).json({ error: error.message });
@@ -359,16 +359,15 @@ async function run() {
         })
 
 
-
-
         // 3 --->> All comments related API
 
         //  Create comment for a post
         app.post('/comments', async (req, res) => {
             try {
-                const comment = req.body; // should contain postId, postTitle, commenterEmail, content, createdAt
+                const comment = req.body;
                 const result = await commentsCollection.insertOne(comment);
-                res.status(201).json({ message: 'Comment added', commentId: result.insertedId });
+
+                res.send(result)
             } catch (err) {
                 console.error(err);
                 res.status(500).json({ error: 'Failed to add comment' });
@@ -376,16 +375,22 @@ async function run() {
         });
 
         //  Get comments by postId
-        app.get('/comments/:postId', async (req, res) => {
+        app.get('/comments/:postId', verifyToken, async (req, res) => {
             try {
                 const postId = req.params.postId;
-                // const commentsCount = await commentsCollection.countDocuments({postId});
+                const { limit, page } = req.query;
+                const limitNum = Math.ceil(limit);
+                const pageNum = Math.ceil(page);
+                const skipNum = (pageNum - 1) * limitNum;
+                const commentsCount = await commentsCollection.countDocuments({ postId });
                 const comments = await commentsCollection
                     .find({ postId })
                     .sort({ createdAt: -1 })
+                    .skip(skipNum)
+                    .limit(limitNum)
                     .toArray();
-                //    const result = {commentsCount, comments};
-                res.send(comments)
+                const result = { comments, commentsCount };
+                res.send(result)
             } catch (err) {
                 console.error(err);
                 res.status(500).json({ error: 'Failed to fetch comments' });
@@ -396,7 +401,6 @@ async function run() {
         app.put("/comment/report/:id", async (req, res) => {
             const { id } = req.params;
             const { feedback } = req.body;
-            console.log(feedback)
             const query = { _id: new ObjectId(id) };
             const updatedDoc = {
                 $set: {
@@ -533,16 +537,6 @@ async function run() {
             const result = await tagsCollection.find().toArray();
             res.send(result)
         })
-
-
-
-
-        // user post api
-        // Add this to your Express backend
-
-
-
-
 
         // Send a ping to confirm a successful connection
         // await client.db("admin").command({ ping: 1 });
