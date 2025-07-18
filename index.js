@@ -60,6 +60,27 @@ async function run() {
             }
         };
 
+        const verifyAdmin = async (req, res, next) => {
+            try {
+                const { email } = req?.user;
+                const user = await usersCollection.findOne({ email });
+
+                if (!user) {
+                    return res.status(401).send({ message: "User not found" })
+                }
+
+                if (user?.role !== 'admin') {
+                    return res.status(403).send({ message: "Only Admins can access this route" })
+                }
+
+                next()
+            }
+            catch (err) {
+                console.log('verifyAdmin Error', err)
+                res.status(500).json({ error: 'Server error' });
+            }
+        }
+
         app.get('/posts/count/:email', verifyToken, async (req, res) => {
             try {
                 const email = req.params.email;
@@ -180,7 +201,7 @@ async function run() {
             }
         });
 
-        app.put("/post/:id", async (req, res) => {
+        app.put("/post/:id", verifyToken, async (req, res) => {
             const update = req.body;
             const id = req.params.id;
             console.log(id)
@@ -270,7 +291,7 @@ async function run() {
         });
 
         // user put api
-        app.put('/user/:email', async (req, res) => {
+        app.put('/user/:email', verifyToken, async (req, res) => {
             try {
                 const email = req.params.email;
                 const updates = req.body;
@@ -295,8 +316,8 @@ async function run() {
             }
         });
 
-        // all user get api
-        app.get("/users", async (req, res) => {
+        // all user get api --> admin api
+        app.get("/users", verifyToken, verifyAdmin, async (req, res) => {
             const { search = '', limit = 10, page = 1 } = req.query;
             const pageNum = Math.max(parseInt(page, 10), 1);
             const limitNum = Math.max(parseInt(limit, 10), 1);
@@ -308,7 +329,7 @@ async function run() {
         })
 
         // update user role patch api
-        app.patch('/user/admin/:id', async (req, res) => {
+        app.patch('/user/admin/:id', verifyToken, async (req, res) => {
             const { id } = req.params;
             const { role } = req.body;
             if (!['user', 'admin', 'moderator'].includes(role)) {
@@ -326,7 +347,7 @@ async function run() {
         });
 
         // role base api
-        app.get('/user/role-badge/:email', async (req, res) => {
+        app.get('/user/role-badge/:email', verifyToken, async (req, res) => {
             try {
                 const email = req.params.email;
                 const user = await usersCollection.findOne({ email });
@@ -362,7 +383,7 @@ async function run() {
         // 3 --->> All comments related API
 
         //  Create comment for a post
-        app.post('/comments', async (req, res) => {
+        app.post('/comments', verifyToken, async (req, res) => {
             try {
                 const comment = req.body;
                 const result = await commentsCollection.insertOne(comment);
@@ -398,7 +419,7 @@ async function run() {
         });
 
         // comment report put api
-        app.put("/comment/report/:id", async (req, res) => {
+        app.put("/comment/report/:id", verifyToken, async (req, res) => {
             const { id } = req.params;
             const { feedback } = req.body;
             const query = { _id: new ObjectId(id) };
@@ -414,8 +435,8 @@ async function run() {
             res.send(result)
         });
 
-        // Clear the `reported` flag (admin only)
-        app.put("/comment/dismiss-report/:id", async (req, res) => {
+        // Clear the `reported` tag 
+        app.put("/comment/dismiss-report/:id", verifyToken, verifyAdmin, async (req, res) => {
             const { id } = req.params;
 
             const query = { _id: new ObjectId(id) };
@@ -439,7 +460,7 @@ async function run() {
         });
 
         // Get all reported comments
-        app.get('/reported-comments', async (req, res) => {
+        app.get('/reported-comments', verifyToken, verifyAdmin, async (req, res) => {
             try {
                 const { limit, page } = req.query;
                 const pageNum = Math.max(parseInt(page, 10), 1);
@@ -463,7 +484,7 @@ async function run() {
         });
 
         // delete a single comment
-        app.delete("/comment/:id", async (req, res) => {
+        app.delete("/comment/:id", verifyToken, verifyAdmin, async (req, res) => {
             const { id } = req.params;
             const query = { _id: new ObjectId(id) };
             const result = await commentsCollection.deleteOne(query);
@@ -473,7 +494,7 @@ async function run() {
 
 
         // admin announcement related api's
-        app.post('/announcement', async (req, res, next) => {
+        app.post('/announcement', verifyToken, verifyAdmin, async (req, res, next) => {
             try {
                 const data = req.body;
 
@@ -504,7 +525,7 @@ async function run() {
         // 4 ----> Admin related API'S  <-----
 
         // admin stats API
-        app.get("/admin-stats", async (req, res) => {
+        app.get("/admin-stats", verifyToken, verifyAdmin, async (req, res) => {
             try {
                 const postsCount = await postsCollection.countDocuments();
                 const commentsCount = await commentsCollection.countDocuments();
@@ -520,7 +541,7 @@ async function run() {
 
         // 5 -----> tags related API'S <-------
 
-        app.post("/tag", async (req, res, next) => {
+        app.post("/tag", verifyToken, async (req, res, next) => {
             try {
                 const { tag } = req.body;
                 const insertedDoc = { tag };
