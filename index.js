@@ -43,6 +43,7 @@ async function run() {
         const tagsCollection = db.collection("tags");
 
         const verifyToken = async (req, res, next) => {
+            // req.user = null;
             const authHeader = req.headers?.authorization;
             if (!authHeader || !authHeader.startsWith("Bearer ")) {
                 return res.status(401).send({ message: "unauthorized access" })
@@ -53,9 +54,11 @@ async function run() {
             try {
                 const decoded = await admin.auth().verifyIdToken(token);
                 req.user = decoded
+                // console.log(decoded)
                 next()
             }
             catch (error) {
+                console.log(error)
                 return res.status(401).send({ message: "unauthorized access" })
             }
         };
@@ -81,10 +84,12 @@ async function run() {
             }
         }
 
+        // post count for add post page --> done
         app.get('/posts/count/:email', verifyToken, async (req, res) => {
             try {
                 const email = req.params.email;
                 if (req.user.email !== email) {
+                    // console.log(email, req.user)
                     res.status(403).send({ message: "Forbidden Access" })
                 }
                 const count = await postsCollection.countDocuments({ authorEmail: email });
@@ -94,7 +99,7 @@ async function run() {
             }
         });
 
-        //  Add a new post
+        //  Add a new post --> done
         app.post('/posts', verifyToken, async (req, res) => {
             try {
                 const post = req.body;
@@ -109,7 +114,7 @@ async function run() {
             }
         });
 
-        // get all posts
+        // get all posts --> done
         app.get('/posts', async (req, res) => {
             try {
                 const { email, sort = 'new', page = 1, limit, search } = req.query;
@@ -171,7 +176,46 @@ async function run() {
             }
         });
 
-        // delete a post
+        // get api with email --> done
+        app.get("/posts/:email", verifyToken, async (req, res) => {
+            const { email } = req.params;
+            const { limit, search, page = 1, sort = 'new' } = req.query;
+            console.log(email, req.user.email)
+            if (email !== req.user.email) {
+                return res.status(403).send({ message: 'Forbidden Access' })
+            }
+            const hasLimit = limit !== undefined;
+            const parsedLimit = hasLimit ? Number(limit) : null;
+            const parsedPage = Number(page);
+
+            const skip = hasLimit ?
+                (parsedPage - 1) * parsedLimit
+                : null;
+
+            const pipeline = [];
+
+            if (email) {
+                pipeline.push({ $match: { authorEmail: email } });
+            };
+            if (search) {
+                const matchStage = { tag: { $regex: search, $options: 'i' } }
+                pipeline.push({ $match: matchStage })
+            };
+            if (hasLimit) {
+                pipeline.push({ $skip: skip });
+                pipeline.push({ $limit: parsedLimit })
+            };
+            if (sort === 'popular') {
+                pipeline.push({ $sort: { voteDifference: -1 } });
+            } else {
+                pipeline.push({ $sort: { createdAt: -1 } });
+            }
+
+            const posts = await postsCollection.aggregate(pipeline).toArray();
+            res.send(posts)
+        })
+
+        // delete a post --> done
         app.delete('/post/:id', verifyToken, async (req, res) => {
             try {
                 const id = req.params.id;
@@ -179,7 +223,10 @@ async function run() {
                 const result = await postsCollection.deleteOne(query);
                 if (result.deletedCount === 0) {
                     return res.status(404).json({ error: 'Post not found' });
-                }
+                };
+
+                const commentQuery = { postId: id };
+                const commentsDelete = await commentsCollection.deleteMany(commentQuery);
                 res.send(result)
             } catch (err) {
                 console.error(err);
@@ -187,7 +234,7 @@ async function run() {
             }
         });
 
-
+        // get a single post details in pd component --> done
         app.get('/post/:id', async (req, res) => {
             try {
                 const id = req.params.id;
@@ -201,10 +248,10 @@ async function run() {
             }
         });
 
+        // put api  --> done
         app.put("/post/:id", verifyToken, async (req, res) => {
             const update = req.body;
             const id = req.params.id;
-            console.log(id)
             const query = { _id: new ObjectId(id) };
             const updatedDoc = {
                 $set: {
@@ -215,7 +262,7 @@ async function run() {
             res.send(result)
         })
 
-        //  Update votes (upvote/downvote) by ID
+        //  Update votes (upvote/downvote) by ID ---> done
         app.put('/post/vote/:id', verifyToken, async (req, res) => {
             try {
                 const id = req.params.id;
@@ -240,10 +287,10 @@ async function run() {
 
         // user related API's
 
+        // user post api  ---> done
         app.post('/user', async (req, res) => {
             try {
                 const user = req.body;
-
                 const { name, email, photoURL } = user;
                 if (!name || !email) {
                     return res.status(400).json({ error: 'Name and email are required' });
@@ -251,10 +298,7 @@ async function run() {
 
                 const existing = await usersCollection.findOne({ email });
                 if (existing) {
-                    const data = {
-                        badge: existing?.badge,
-                    }
-                    return res.status(200).json({ message: 'User already exists', data: data });
+                    return res.status(200).json({ message: 'User already exists' });
                 }
 
                 const newUser = {
@@ -267,7 +311,6 @@ async function run() {
                 };
 
                 const result = await usersCollection.insertOne(newUser);
-
                 res.send(result);
             } catch (err) {
                 console.error(err);
@@ -275,22 +318,24 @@ async function run() {
             }
         });
 
-        // user get api
+        // user get api --> done
         app.get('/user/:email', verifyToken, async (req, res) => {
             try {
                 const email = req.params.email;
                 const query = { email }
                 const user = await usersCollection.findOne(query);
                 if (!user) return res.status(404).json({ error: 'User not found' });
-
-                res.send(user)
+                const postsCount = await postsCollection.countDocuments({ authorEmail: email });
+                const commentsCount = await commentsCollection.countDocuments({ authorEmail: email })
+                const result = { ...user, postsCount, commentsCount };
+                res.send(result)
             } catch (err) {
                 console.error(err);
                 res.status(500).json({ error: 'Failed to fetch profile' });
             }
         });
 
-        // user put api
+        // user put api --> working
         app.put('/user/:email', verifyToken, async (req, res) => {
             try {
                 const email = req.params.email;
@@ -316,7 +361,7 @@ async function run() {
             }
         });
 
-        // all user get api --> admin api
+        // all user get api --> admin api --> done
         app.get("/users", verifyToken, verifyAdmin, async (req, res) => {
             const { search = '', limit = 10, page = 1 } = req.query;
             const pageNum = Math.max(parseInt(page, 10), 1);
@@ -328,11 +373,11 @@ async function run() {
             res.send(result)
         })
 
-        // update user role patch api
-        app.patch('/user/admin/:id', verifyToken, async (req, res) => {
+        // update user role patch api  ---> done
+        app.patch('/user/admin/:id', verifyToken, verifyAdmin, async (req, res) => {
             const { id } = req.params;
             const { role } = req.body;
-            if (!['user', 'admin', 'moderator'].includes(role)) {
+            if (!['user', 'admin'].includes(role)) {
                 return res.status(400).json({ error: 'Invalid role' });
             };
 
@@ -346,10 +391,11 @@ async function run() {
             res.send(result)
         });
 
-        // role base api
-        app.get('/user/role-badge/:email', verifyToken, async (req, res) => {
+        // role base api --> done
+        app.get('/user/role-badge/:email', async (req, res) => {
             try {
                 const email = req.params.email;
+                // console
                 const user = await usersCollection.findOne({ email });
                 if (!user) return res.status(404).json({ error: 'User not found' });
 
@@ -382,7 +428,7 @@ async function run() {
 
         // 3 --->> All comments related API
 
-        //  Create comment for a post
+        //  Create comment for a post --> done
         app.post('/comments', verifyToken, async (req, res) => {
             try {
                 const comment = req.body;
@@ -395,7 +441,7 @@ async function run() {
             }
         });
 
-        //  Get comments by postId
+        //  Get comments by postId ---> done
         app.get('/comments/:postId', verifyToken, async (req, res) => {
             try {
                 const postId = req.params.postId;
@@ -418,7 +464,7 @@ async function run() {
             }
         });
 
-        // comment report put api
+        // comment report put api --> done
         app.put("/comment/report/:id", verifyToken, async (req, res) => {
             const { id } = req.params;
             const { feedback } = req.body;
@@ -435,7 +481,7 @@ async function run() {
             res.send(result)
         });
 
-        // Clear the `reported` tag 
+        // Clear the `reported` tag  --> done
         app.put("/comment/dismiss-report/:id", verifyToken, verifyAdmin, async (req, res) => {
             const { id } = req.params;
 
@@ -459,7 +505,7 @@ async function run() {
             }
         });
 
-        // Get all reported comments
+        // Get all reported comments --> done
         app.get('/reported-comments', verifyToken, verifyAdmin, async (req, res) => {
             try {
                 const { limit, page } = req.query;
@@ -483,17 +529,26 @@ async function run() {
             }
         });
 
-        // delete a single comment
+        // delete a single comment --> done
         app.delete("/comment/:id", verifyToken, verifyAdmin, async (req, res) => {
             const { id } = req.params;
             const query = { _id: new ObjectId(id) };
             const result = await commentsCollection.deleteOne(query);
             res.send(result);
+        });
+
+        // get comments count for comments details --> done
+        app.get("/comments-count", async (req, res) => {
+            const id = req.query.id
+            const query = {};
+            if (id) query.postId = id;
+            const commentsCount = await commentsCollection.countDocuments(query);
+            res.send({ commentsCount })
         })
 
 
 
-        // admin announcement related api's
+        // admin announcement related api's --> done
         app.post('/announcement', verifyToken, verifyAdmin, async (req, res, next) => {
             try {
                 const data = req.body;
@@ -511,11 +566,13 @@ async function run() {
             }
         });
 
+        // get all announcemnet s for home page  --> done
         app.get("/announcements", async (req, res) => {
             const result = await announcementsCollection.find().toArray();
             res.send(result);
         })
 
+        // get announcements count for notification --> done
         app.get("/announcement-count", async (req, res) => {
             const result = await announcementsCollection.countDocuments();
             res.send(result)
@@ -524,7 +581,7 @@ async function run() {
 
         // 4 ----> Admin related API'S  <-----
 
-        // admin stats API
+        // admin stats API --> done
         app.get("/admin-stats", verifyToken, verifyAdmin, async (req, res) => {
             try {
                 const postsCount = await postsCollection.countDocuments();
@@ -541,6 +598,7 @@ async function run() {
 
         // 5 -----> tags related API'S <-------
 
+        // post a a tag  --> done
         app.post("/tag", verifyToken, async (req, res, next) => {
             try {
                 const { tag } = req.body;
@@ -553,7 +611,7 @@ async function run() {
             }
         });
 
-        // tags get api
+        // tags get api --> done
         app.get("/tags", async (req, res) => {
             const result = await tagsCollection.find().toArray();
             res.send(result)
