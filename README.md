@@ -44,6 +44,7 @@ This is the backend API server for the Disco Zone application. It provides endpo
    git clone https://github.com/your-username/disco-zone-backend.git
    cd disco-zone-backend
 
+
 2. **Installation**
   ```
  npm install
@@ -61,4 +62,21 @@ NODEMAILER_AUTH_GMAIL_ID=your_gmail_email_address
 NODEMAILER_AUTH_GMAIL_APP_PASS=your_gmail_app_password
 ACCESS_TOKEN_SECRET=your_jwt_secret_key
 ```
+
+4. ** Add Firebase service account key
+
+Download your Firebase service account JSON file from the Firebase Console and save it as serviceAccount.json in the root directory.
+**
+
+5.**Install dependencies**
+```
+npm i
+```
+
+6. ** Run the Server**
+ ```
+npm run dev
+```
+
+
 
