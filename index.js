@@ -41,6 +41,7 @@ async function run() {
         const commentsCollection = db.collection("comments");
         const announcementsCollection = db.collection("announcements");
         const tagsCollection = db.collection("tags");
+        const subscriptions = db.collection("subscriptions");
 
         const verifyToken = async (req, res, next) => {
             // req.user = null;
@@ -82,7 +83,11 @@ async function run() {
                 console.log('verifyAdmin Error', err)
                 res.status(500).json({ error: 'Server error' });
             }
-        }
+        };
+        function formatDate(date) {
+            const d = new Date(date);
+            return d.toLocaleString("default", { month: "short", year: "numeric" }); // e.g., Jan 2025
+        };
 
         // post count for add post page --> done
         app.get('/posts/count/:email', verifyToken, async (req, res) => {
@@ -169,7 +174,9 @@ async function run() {
                     $project: { commentsArr: 0 }
                 });
                 const posts = await postsCollection.aggregate(pipeline).toArray();
-                res.json(posts);
+
+                const postsCount = await postsCollection.countDocuments();
+                res.json({ postsCount, posts });
             } catch (err) {
                 console.error(err);
                 res.status(500).json({ error: 'Failed to fetch posts' });
@@ -180,7 +187,7 @@ async function run() {
         app.get("/posts/:email", verifyToken, async (req, res) => {
             const { email } = req.params;
             const { limit, search, page = 1, sort = 'new' } = req.query;
-            console.log(email, req.user.email)
+            // console.log(email, req.user.email)
             if (email !== req.user.email) {
                 return res.status(403).send({ message: 'Forbidden Access' })
             }
@@ -441,8 +448,13 @@ async function run() {
             }
         });
 
+        app.get('/comments', async (req, res) => {
+            const result = await commentsCollection.find().toArray();
+            res.send(result)
+        })
+
         //  Get comments by postId ---> done
-        app.get('/comments/:postId', verifyToken, async (req, res) => {
+        app.get('/comments/:postId', async (req, res) => {
             try {
                 const postId = req.params.postId;
                 const { limit, page } = req.query;
@@ -611,12 +623,82 @@ async function run() {
             }
         });
 
+        app.get("/overview/:email", async (req, res) => {
+            try {
+                const email = req.params.email;
+
+                // Fetch user posts & comments
+                const posts = await postsCollection.find({ authorEmail: email }).toArray();
+                const comments = await commentsCollection.find({ authorEmail: email }).toArray();
+
+                // Group posts by month
+                const postStats = {};
+                posts.forEach((p) => {
+                    const key = formatDate(p.createdAt);
+                    postStats[key] = (postStats[key] || 0) + 1;
+                });
+
+                // Group comments by month
+                const commentStats = {};
+                comments.forEach((c) => {
+                    const key = formatDate(c.time);
+                    commentStats[key] = (commentStats[key] || 0) + 1;
+                });
+
+                // Format data for charts
+                const postData = Object.keys(postStats).map((date) => ({
+                    date,
+                    posts: postStats[date],
+                }));
+
+                const commentData = Object.keys(commentStats).map((date) => ({
+                    date,
+                    comments: commentStats[date],
+                }));
+
+                res.json({
+                    success: true,
+                    postData,
+                    commentData,
+                });
+            } catch (err) {
+                console.error("❌ Error in overview API:", err);
+                res.status(500).json({ success: false, message: "Server error" });
+            }
+        });
+
         // tags get api --> done
         app.get("/tags", async (req, res) => {
             const result = await tagsCollection.find().toArray();
             res.send(result)
         })
 
+        app.post("/subscribe", async (req, res) => {
+            try {
+                const { email } = req.body;
+
+                if (!email) {
+                    return res.status(400).json({ message: "Email is required" });
+                }
+
+                // Check if already subscribed
+                const existing = await subscriptions.findOne({ email });
+                if (existing) {
+                    return res.status(400).json({ message: "Already subscribed" });
+                }
+
+                // Save new subscription
+                const result = await subscriptions.insertOne({ email, date: new Date() });
+
+                res.status(201).json({
+                    message: "Subscription successful",
+                    subscriptionId: result.insertedId
+                });
+            } catch (error) {
+                console.error(error);
+                res.status(500).json({ message: "Internal Server Error" });
+            }
+        })
         // Send a ping to confirm a successful connection
         // await client.db("admin").command({ ping: 1 });
         // console.log("Pinged your deployment. You successfully connected to MongoDB!");
